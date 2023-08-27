@@ -2,6 +2,7 @@
 
 namespace MiNutCz\Tree;
 
+use MiNutCz\Tree\Exceptions\InvalidStateException;
 use MiNutCz\Tree\Plugins\PluginInterface;
 
 class Configurator
@@ -19,6 +20,9 @@ class Configurator
      */
     public function getTreeConfiguration(): array
     {
+        if(!isset($this->dataLoadUrl)){
+            throw new InvalidStateException('Data load url is not set');
+        }
         $cfg = [];
         $cfg['core'] = [
             'data' => [
