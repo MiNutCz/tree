@@ -1,0 +1,318 @@
+{varType array $jsTreeConfiguration}
+{varType string $actionUrl}
+{varType string $treeId}
+{varType bool $searchEnabled}
+<div class="tree">
+    <div class="search" n:if="$searchEnabled">
+        <div class="row">
+            <div class="col">
+                <div class="form-check">
+                    <input id="{$treeId}-search-case-sensitive" type="checkbox"
+                           class="jstree-case-sensitive form-check-input">
+                    <label class="form-check-label" for="{$treeId}-search-case-sensitive">Case sensitive</label>
+                </div>
+            </div>
+            <div class="col">
+
+                <div class="form-check">
+                    <input id="{$treeId}-search-only-matches" type="checkbox"
+                           class="jstree-only-matches form-check-input">
+                    <label class="form-check-label" for="{$treeId}-search-only-matches">Show only matches</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col">
+                <input type="text" id="{$treeId}-search-search" class="jstree-search form-control ">
+            </div>
+        </div>
+    </div>
+    <div class="jsTree" id="{$treeId}" data-js-tree-config="{json_encode($jsTreeConfiguration)}"
+         data-js-tree-action-url="{$actionUrl}"></div>
+</div>
+<script type="application/javascript" n:syntax="double">
+    document.addEventListener("DOMContentLoaded", function () {
+        let initTree = function () {
+            let jsTrees = document.querySelectorAll('.jsTree:not([data-jstree-initialized])');
+            jsTrees.forEach(function (e) {
+                let disableEvent = false;
+                let config = {};
+                let actionUrl = '';
+                if (e.dataset.jsTreeConfig) {
+                    config = JSON.parse(e.dataset.jsTreeConfig);
+                }
+                if (e.dataset.jsTreeActionUrl) {
+                    actionUrl = e.dataset.jsTreeActionUrl;
+                }
+
+                $(e).on(config.events.join(' '), function () {
+                    if (disableEvent)
+                        return;
+                    let args = Array.from(arguments);
+                    let inst = $.jstree.reference(args[0].currentTarget);
+                    let node = undefined;
+                    if (Object.keys(args[1]).indexOf('node') > -1) {
+                        node = args[1]['node'];
+                    }
+                    let event = arguments[0].type + '.' + arguments[0].namespace;
+                    if (event === 'select_node.jstree') {
+                        if (args[1].selected.length > 1) {
+                            return;
+                        }
+                    }
+                    if (node !== undefined) {
+                        if (node.original.id === undefined) {
+                            if (Object.keys(args[1]).indexOf('original') > -1) {
+                                node['original'] = args[1]['original']['original']
+                            }
+                        }
+                    }
+
+                    let xhr = new XMLHttpRequest();
+                    xhr.open("POST", actionUrl, true);
+                    xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                    xhr.onreadystatechange = function () {
+                        if (xhr.readyState === 4) {
+                            if (xhr.status === 200) {
+                                let data = JSON.parse(xhr.responseText);
+                                if (data.hasOwnProperty('refreshTree')) {
+                                    if (data.refreshTree === true) {
+                                        inst.refresh();
+                                    }
+                                }
+                            } else {
+                                if (xhr.statusText !== 'abort') {
+                                    console.error('Something went wrong with a tree, please contact system administrators');
+                                    inst.refresh();
+                                }
+                            }
+                        }
+                    };
+                    let requestData = "src=events&command=" + encodeURIComponent(event) + "&prm=" + encodeURIComponent(JSON.stringify(node));
+                    xhr.send(requestData);
+
+                });
+                if (config.plugins.indexOf('nodeManipulation') !== -1) {
+                    $(e).on('ready.jstree', function () {
+                        let args = Array.from(arguments);
+                        let inst = $.jstree.reference(args[0].currentTarget);
+
+                        inst.close_all();
+                        inst.deselect_all();
+                        disableEvent = true;
+                        if (config.nodeManipulation.openNodes.length > 0) {
+                            inst.select_node(config.nodeManipulation.openNodes, true)
+                            inst.deselect_all(true);
+                            for (let opened in config.nodeManipulation.openNodes) {
+                                inst.open_node(config.nodeManipulation.openNodes[opened]);
+                            }
+                        }
+                        if (config.nodeManipulation.selectedNodes.length > 0) {
+                            inst.select_node(config.nodeManipulation.selectedNodes, true);
+                            if (config.nodeManipulation.openSelectedNode) {
+                                for (let selected in config.nodeManipulation.selectedNodes) {
+                                    inst.open_node(config.nodeManipulation.selectedNodes[selected]);
+                                }
+                            }
+                        }
+                        if (config.nodeManipulation.disabledTree) {
+                            inst.disable_node(inst.get_json(null, {flat : true}));
+                            if (config.nodeManipulation.enabledNodes.length > 0) {
+                                for (let enabled in config.nodeManipulation.enabledNodes) {
+                                    inst.enable_node(config.nodeManipulation.enabledNodes[enabled]);
+                                }
+                            }
+                        } else {
+                            if (config.nodeManipulation.disabledNodes.length > 0) {
+                                for (let disabled in config.nodeManipulation.disabledNodes) {
+                                    inst.disable_node(config.nodeManipulation.disabledNodes[disabled]);
+                                }
+                            }
+                        }
+
+
+                        setTimeout(function () {
+                            disableEvent = false;
+                        }, 200);
+
+
+                    });
+
+
+                }
+
+                if (config.plugins.indexOf('dnd') !== -1) {
+                    config.dnd = config.dnd || {};
+                    config.dnd.is_draggable = function (node) {
+                        if (node[0] !== undefined) {
+                            let selected = node[0];
+                            if (selected['original']['draggable'] !== undefined) {
+                                return selected['original']['draggable'];
+                            }
+                            return config.types[selected.type]['draggable'] !== false;
+                        }
+                        return true;
+                    };
+                }
+
+                if (config.plugins.indexOf('contextmenu') !== -1) {
+                    let menu = {}
+
+                    config.contextmenu.menuItems = config.contextmenu.menuItems || {};
+
+                    for (const key in config.contextmenu.menuItems) {
+                        let item = config.contextmenu.menuItems[key]
+                        item.action = function (data) {
+                            let inst = $.jstree.reference(data.reference);
+                            let node = inst.get_node(data.reference);
+
+                            let callAction = function () {
+                                if (data.item.confirm_question !== undefined) {
+                                    if (!confirm(data.item.confirm_question)) {
+                                        inst.refresh();
+                                        return false;
+                                    }
+                                }
+                                let xhr = new XMLHttpRequest();
+                                xhr.open("POST", actionUrl, true);
+                                xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+                                xhr.onreadystatechange = function () {
+                                    if (xhr.readyState === 4) {
+                                        if (xhr.status === 200) {
+                                            let data = JSON.parse(xhr.responseText);
+                                            if (data.hasOwnProperty('refreshTree')) {
+                                                if (data.refreshTree === true) {
+                                                    inst.refresh();
+                                                }
+                                            }
+                                        } else {
+                                            if (xhr.statusText !== 'abort') {
+                                                console.error('Something went wrong with a tree, please contact system administrators');
+                                                inst.refresh();
+                                            }
+                                        }
+                                    }
+                                };
+                                let requestData = "src=contextmenu&command=" + encodeURIComponent(data.item.name) + "&prm=" + encodeURIComponent(JSON.stringify(node));
+                                xhr.send(requestData);
+                            };
+                            switch (item.actionType) {
+                                case 'menu_action_create':
+                                    let newNodeData = {
+                                        text: "new_node",
+                                    };
+                                    inst.create_node(node.id, newNodeData, "last", function (new_node) {
+                                        inst.open_node(node);
+                                        let n = document.getElementById(new_node.id);
+                                        while (n.firstChild) {
+                                            n.removeChild(n.firstChild);
+                                        }
+
+                                        let input = document.createElement('input');
+                                        input.type = 'text';
+                                        input.className = 'form-control';
+                                        input.id = 'new_node_create_box_' + new_node.id;
+                                        n.appendChild(input);
+                                        input.addEventListener('change', function () {
+                                            node.new_node_name = this.value;
+                                            while (n.firstChild) {
+                                                n.removeChild(n.firstChild);
+                                            }
+                                            callAction();
+                                        });
+                                        setTimeout(function () {
+                                            document.getElementById('new_node_create_box_' + new_node.id + '').focus();
+                                        }, 200);
+                                    });
+                                    break;
+                                case 'menu_action_edit':
+                                    let n = document.getElementById(node.id);
+                                    while (n.firstChild) {
+                                        n.removeChild(n.firstChild);
+                                    }
+
+                                    let input = document.createElement('input');
+                                    input.type = 'text';
+                                    input.className = 'form-control';
+                                    input.id = 'node_update_box_' + node.id;
+                                    input.value = node.text;
+                                    n.appendChild(input);
+                                    let inputElement = document.getElementById('node_update_box_' + node.id);
+
+                                    setTimeout(function () {
+                                        inputElement.focus();
+                                        inputElement.select();
+                                    }, 200);
+
+                                    inputElement.addEventListener('change', function () {
+                                        node.text = this.value;
+                                        while (n.firstChild) {
+                                            n.removeChild(n.firstChild);
+                                        }
+                                        callAction();
+                                    });
+                                    break;
+                                default:
+                                    callAction();
+                                    break;
+
+                            }
+
+                            console.log(node);
+                        }
+                        menu[key] = item;
+                    }
+
+                    config.contextmenu.items = function (node) {
+                        for (const key in menu) {
+                            if (menu[key].whitelist_types.length > 0 && !menu[key]._disabled) {
+                                menu[key]._disabled = menu[key].whitelist_types.indexOf(node.type) === -1;
+                            }
+                        }
+                        return menu;
+                    }
+                }
+
+
+                console.log(config);
+                e.setAttribute('data-jstree-initialized', 'true');
+                $(e).jstree(config);
+
+                if (config.plugins.indexOf('search') !== -1) {
+                    let inst = $.jstree.reference(e);
+                    let search = e.closest('.tree').querySelector('.jstree-search');
+                    let caseSensitive = e.closest('.tree').querySelector('.jstree-case-sensitive');
+                    let onlyMatches = e.closest('.tree').querySelector('.jstree-only-matches');
+                    if (caseSensitive !== null) {
+                        caseSensitive.checked = inst.settings.search.case_sensitive
+                        caseSensitive.addEventListener('change', function (ev) {
+                            disableEvent = true;
+                            inst.settings.search.case_sensitive = this.checked;
+                            inst.search(search.value);
+                            disableEvent = false;
+                        });
+                    }
+                    if (onlyMatches !== null) {
+                        onlyMatches.checked = inst.settings.search.show_only_matches
+                        onlyMatches.addEventListener('change', function (ev) {
+                            disableEvent = true;
+                            inst.settings.search.show_only_matches = this.checked;
+                            inst.search(search.value);
+                            disableEvent = false;
+                        });
+                    }
+                    console.log(inst.settings.search.case_sensitive);
+                    search.addEventListener('keyup', function (ev) {
+                        console.log(ev);
+                        let value = $(this).val();
+                        ev.preventDefault();
+                        inst.search(value);
+                    });
+                }
+            });
+        }
+
+        initTree();
+    });
+</script>
