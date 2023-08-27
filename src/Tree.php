@@ -139,7 +139,6 @@ class Tree extends Control
             throw new TreeException('No source set!');
         }
         $data = $this->source->getTreeNodes();
-        bdump($data);
         $this->validateData($data);
         $this->getPresenter()->sendJson($data);
     }
